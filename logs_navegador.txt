@@ -1,0 +1,83 @@
+[CONSOLE WARNING] Connection: Wired
+[CONSOLE LOG] AUTOSTART http://localhost:8000//cdn/0.9.3/pythons.js http://localhost:8000/ undefined
+[CONSOLE LOG] Location of pythons.js overrides script http://localhost:8000//cdn/0.9.3/pythons.js => http://localhost:8000//cdn/0.9.3/pythons.js?#
+[CONSOLE LOG] {"xtermjs":"1","_sdl2":"canvas","user_canvas":0,"user_canvas_managed":0,"gui_divider":2,"ume_block":1,"can_close":0,"archive":"online_chess","gui_debug":2,"cdn":"http://localhost:8000//cdn/0.9.3/","autorun":0,"PYBUILD":"3.12","fb_ar":1.77,"fb_width":"1280","fb_height":"720","pydigits":"312","executable":"http://localhost:8000//cdn/0.9.3/cpython312/main.js","debug":false,"interactive":false,"columns":132,"lines":"42","console":10,"fbdev":false,"quiet":false,"features":["vtx","snd","gui"]}
+[CONSOLE LOG] config.xtermjs = 1
+[CONSOLE LOG] config._sdl2 = canvas
+[CONSOLE LOG] config.user_canvas = 0
+[CONSOLE LOG] config.user_canvas_managed = 0
+[CONSOLE LOG] config.gui_divider = 2
+[CONSOLE LOG] config.ume_block = 1
+[CONSOLE LOG] config.can_close = 0
+[CONSOLE LOG] config.archive = online_chess
+[CONSOLE LOG] config.gui_debug = 2
+[CONSOLE LOG] config.cdn = http://localhost:8000//cdn/0.9.3/
+[CONSOLE LOG] config.autorun = 0
+[CONSOLE LOG] config.PYBUILD = 3.12
+[CONSOLE LOG] config.fb_ar = 1.77
+[CONSOLE LOG] config.fb_width = 1280
+[CONSOLE LOG] config.fb_height = 720
+[CONSOLE LOG] config.pydigits = 312
+[CONSOLE LOG] config.executable = http://localhost:8000//cdn/0.9.3/cpython312/main.js
+[CONSOLE LOG] config.debug = false
+[CONSOLE LOG] config.interactive = false
+[CONSOLE LOG] config.columns = 132
+[CONSOLE LOG] config.lines = 42
+[CONSOLE LOG] config.console = 10
+[CONSOLE LOG] config.fbdev = false
+[CONSOLE LOG] config.quiet = false
+[CONSOLE LOG] config.features = [vtx, snd, gui]
+[CONSOLE LOG] interpreter= cpython
+[CONSOLE LOG] orig_argv []
+[CONSOLE LOG] sys.argv:  []
+[CONSOLE LOG] docurl= http://localhost:8000/
+[CONSOLE LOG] srcurl= http://localhost:8000//cdn/0.9.3/pythons.js
+[CONSOLE LOG] data-os= vtx,snd,gui
+[CONSOLE LOG] data-python= python3.12
+[CONSOLE LOG] script: id= site
+[CONSOLE LOG] code :  3693  as site.py
+[CONSOLE ERROR] Failed to load resource: the server responded with a status of 404 (File not found)
+[CONSOLE WARNING] Unrecognized feature: 'monetization'.
+[CONSOLE WARNING] Unrecognized feature: 'xr'.
+[CONSOLE WARNING] Allow attribute will take precedence over 'allowfullscreen'.
+[CONSOLE WARNING] An iframe which has both allow-scripts and allow-same-origin for its sandbox attribute can escape its sandboxing.
+[CONSOLE WARNING] 
+
+
+== FLAGS : is_mobile(false) dev=false debug_user=false debug_mobile=false ==
+
+
+
+
+[CONSOLE LOG] Terminal+ImageAddon importing from CDN : http://localhost:8000//cdn/0.9.3/../vt/
+[CONSOLE LOG] vtx font: -5%
+[CONSOLE WARNING] vtx font: 720 / 52 = 9  Cols: 132 Cons: 10
+[CONSOLE WARNING] terminal 132 52 {url: http://localhost:8000//cdn/0.9.3/xtermjsixel/xterm-addon-image-worker.js, sixelSupport: true}
+[CONSOLE WARNING] Auto ume unlocker safari== false
+[CONSOLE WARNING] TODO: user defined canvas
+[CONSOLE LOG] pythons.js:  custom_onload
+[CONSOLE WARNING] Loading python interpreter from http://localhost:8000//cdn/0.9.3/cpython312/main.js
+[CONSOLE ERROR] ** MEDIA USER ACTION REQUIRED [1] **
+[CONSOLE LOG] main.js:  locateData: main.data  -> http://localhost:8000//cdn/0.9.3/cpython312/main.data
+[CONSOLE LOG] main.js:  locateFile: main.wasm http://localhost:8000//cdn/0.9.3/cpython312/
+[CONSOLE WARNING] VM.prerun:Begin
+[CONSOLE WARNING] VM.prerun:End
+[CONSOLE LOG] PyMain: running in main thread, faking onCustomMessage
+[CONSOLE ERROR] PyMain: BrowserFS not found
+[CONSOLE WARNING] VM.postrun Begin
+[CONSOLE LOG] Maybe RC http://localhost:8000//cdn/0.9.3/cpythonrc.py
+[CONSOLE WARNING] VM.postrun End
+[CONSOLE ERROR] ** MEDIA USER ACTION REQUIRED [2] **
+[CONSOLE LOG] Begin.cross_file.fetch https://pygame-web.github.io/cdn/index-0.9.3-cp312.json {redirect: follow, credentials: omit}
+[CONSOLE LOG] cross_file.fetch 200
+[CONSOLE LOG] End.cross_file.fetch /tmp/tmp-1-0 r/w= 1451
+[CONSOLE LOG] Begin.cross_file.fetch online_chess.tar.gz {redirect: follow, credentials: omit}
+[CONSOLE LOG] cross_file.fetch 200
+[CONSOLE LOG] End.cross_file.fetch /tmp/tmp-21-1 r/w= 15097
+[CONSOLE ERROR] ** MEDIA USER ACTION REQUIRED [3] **
+[CONSOLE ERROR] ** MEDIA USER ACTION REQUIRED [4] **
+[CONSOLE LOG] Begin.cross_file.fetch http://localhost:8000/cdn/cp312/pygame_ce-2.5.7-cp312-cp312-wasm32_bi_emscripten.whl# {redirect: follow, credentials: omit}
+[CONSOLE LOG] cross_file.fetch 200
+[CONSOLE LOG] End.cross_file.fetch /tmp/tmp-369-2 r/w= 1527290
+[CONSOLE WARNING] The ScriptProcessorNode is deprecated. Use AudioWorkletNode instead. (https://bit.ly/audio-worklet)
+[CONSOLE ERROR] WebSocket connection to 'ws://localhost:5556/' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
