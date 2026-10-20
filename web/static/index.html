@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Online Chess</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <span class="brand">♞ Online Chess</span>
+    <span id="userBox" class="hidden">
+      <span id="userName"></span>
+      <button id="logoutBtn" class="link">Sair da conta</button>
+    </span>
+  </header>
+
+  <main>
+    <!-- Login / cadastro -->
+    <section id="authView" class="view hidden">
+      <form id="authForm" class="card auth">
+        <h1 id="authTitle">Entrar</h1>
+        <label>Usuário <input id="authUser" autocomplete="username" required></label>
+        <label>Senha <input id="authPass" type="password" autocomplete="current-password" required></label>
+        <p id="authError" class="error"></p>
+        <button type="submit" id="authSubmit" class="primary">Entrar</button>
+        <p class="muted">
+          <span id="authSwitchText">Não tem conta?</span>
+          <button type="button" id="authSwitch" class="link">Criar conta</button>
+        </p>
+      </form>
+    </section>
+
+    <!-- Lobby -->
+    <section id="lobbyView" class="view hidden">
+      <form id="createForm" class="card create">
+        <h2>Criar sala</h2>
+        <div class="row">
+          <input id="roomName" maxlength="30" placeholder="Nome da sala">
+          <select id="roomRole">
+            <option value="white">Jogar de brancas</option>
+            <option value="black">Jogar de pretas</option>
+          </select>
+          <button type="submit" class="primary">Criar</button>
+        </div>
+      </form>
+      <h2>Salas</h2>
+      <div id="roomList" class="rooms"></div>
+      <p id="noRooms" class="muted hidden">Nenhuma sala aberta. Crie uma!</p>
+    </section>
+
+    <!-- Jogo -->
+    <section id="gameView" class="view hidden">
+      <div class="game">
+        <canvas id="board" width="500" height="500"></canvas>
+        <div class="side">
+          <h2 id="gameTitle"></h2>
+          <div class="player"><span class="swatch black"></span><span id="blackName"></span></div>
+          <div class="player"><span class="swatch white"></span><span id="whiteName"></span></div>
+          <p id="gameStatus" class="status"></p>
+          <p id="spectatorList" class="muted"></p>
+          <p id="lastMove" class="muted"></p>
+          <div class="actions">
+            <button id="restartBtn" class="primary hidden">Nova partida</button>
+            <button id="leaveBtn">Voltar ao lobby</button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/static/app.js"></script>
+</body>
+</html>
