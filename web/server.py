@@ -1,4 +1,4 @@
-''' Servidor do Online Chess para navegador.
+''' Servidor do Pawnthon Chess para navegador.
 Uma única porta serve as páginas (HTTP), as rotas de conta (/api/...) e o jogo em tempo real (/ws) '''
 
 import asyncio
@@ -132,18 +132,38 @@ async def handleMessage(conn, data):
             return "Movimento inválido"
         error = room.tryMove(conn, start, end)
         if error:
-            await conn.send(room.stateFor(conn))  # devolve o estado certo para o cliente se acertar
+            if room.status == "timeout":  # o tempo acabou antes da jogada chegar
+                await room.broadcastState()
+                await lobby.broadcastRooms()
+            else:
+                await conn.send(room.stateFor(conn))  # devolve o estado certo para o cliente se acertar
             return error
         print(f"Sala {room.id}: {conn.username} jogou {room.lastMove['notation']}")
         await room.broadcastState()
         await lobby.broadcastRooms()
         return None
 
+    if kind == "ready":
+        room = conn.room
+        if room is None:
+            return "Você não está em uma sala"
+        error = room.setReady(conn, data.get("ready"))
+        if error:
+            return error
+        if room.started:
+            print(f"Sala {room.id}: partida iniciada")
+        await room.broadcastState()
+        await lobby.broadcastRooms()
+        return None
+
+    if kind == "kick":
+        return await lobby.kick(conn, str(data.get("username", "")))
+
     if kind == "restart":
         room = conn.room
         if room is None or conn.role == "spectator":
             return "Só os jogadores podem pedir uma nova partida"
-        if room.status not in ("checkmate", "stalemate"):
+        if room.status not in ("checkmate", "stalemate", "timeout"):
             return "A partida ainda não terminou"
         room.newGame()
         await room.broadcastState()
@@ -155,10 +175,12 @@ async def handleMessage(conn, data):
 
 async def startBackground(app):
     app["cleanup"] = asyncio.create_task(lobby.cleanupLoop())
+    app["clock"] = asyncio.create_task(lobby.clockLoop())
 
 
 async def stopBackground(app):
     app["cleanup"].cancel()
+    app["clock"].cancel()
 
 
 def createApp():

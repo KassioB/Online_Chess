@@ -1,19 +1,22 @@
-// Cliente do Online Chess no navegador.
+// Cliente do Pawnthon Chess no navegador.
 // Toda a regra do jogo roda no servidor Python (ChessEngine); aqui só desenhamos
 // o tabuleiro igual à versão pygame e mandamos os cliques do jogador.
 
-const width = 500, height = 500;
 const dim = 8;
-const sqsize = Math.floor(height / dim);
+const sqsize = 62;
+const width = sqsize * dim, height = sqsize * dim; // canvas do tamanho exato das 8 casas, sem sobra
 const images = {};
 
-// cores do pygame: p.Color('white'), 'black', 'gray', 'dark gray', 'blue'
+// paleta do site: #FF204E, #A0153E, #5D0E41, #00224D + branco e preto
 const COLORS = {
   white: "rgb(255,255,255)",
   black: "rgb(0,0,0)",
-  gray: "rgb(190,190,190)",
-  darkGray: "rgba(169,169,169,0.392)", // set_alpha(100)
-  blue: "rgba(0,0,255,0.392)",
+  light: "#f3e6ea",           // casas claras
+  dark: "#A0153E",            // casas escuras (jogador)
+  darkSpectator: "#5D0E41",   // casas escuras (espectador)
+  selected: "rgba(0,34,77,0.55)",    // casa selecionada (#00224D)
+  target: "rgba(255,32,78,0.55)",    // destinos possíveis (#FF204E)
+  lastMove: "rgba(255,32,78,0.22)",  // último lance
 };
 
 const $ = (id) => document.getElementById(id);
@@ -30,6 +33,7 @@ let playerClicks = [];
 let waitingServer = false;
 let lastMoveId = null;
 let animation = null;
+let clockAt = 0; // performance.now() de quando o relógio do último estado chegou
 
 // ---------- utilidades ----------
 
@@ -133,6 +137,12 @@ function handleMessage(msg) {
     if (view !== "gameView") show("lobbyView");
   } else if (msg.type === "state") {
     onState(msg);
+  } else if (msg.type === "kicked") {
+    storage((s) => s.removeItem("chessRoom"));
+    game = null;
+    lastMoveId = null;
+    show("lobbyView");
+    toast(`Você foi removido da sala "${msg.room}" pelo dono`);
   } else if (msg.type === "error") {
     waitingServer = false;
     toast(msg.message);
@@ -147,10 +157,11 @@ function handleMessage(msg) {
 
 const ROLE_LABEL = { white: "brancas", black: "pretas", spectator: "espectador" };
 const STATUS_LABEL = {
-  waiting: "Esperando jogador",
+  waiting: "Sala de espera",
   playing: "Em andamento",
   checkmate: "Xeque-mate",
   stalemate: "Empate (afogamento)",
+  timeout: "Fim por tempo",
 };
 
 $("createForm").onsubmit = (e) => {
@@ -194,13 +205,17 @@ function renderRooms(rooms) {
 
 // ---------- partida ----------
 
-$("leaveBtn").onclick = () => {
-  storage((s) => s.removeItem("chessRoom"));
-  game = null;
-  lastMoveId = null;
-  send({ type: "leave" });
-  show("lobbyView");
-};
+for (const btn of document.querySelectorAll(".leaveBtn")) {
+  btn.onclick = () => {
+    storage((s) => s.removeItem("chessRoom"));
+    game = null;
+    lastMoveId = null;
+    send({ type: "leave" });
+    show("lobbyView");
+  };
+}
+
+$("readyBtn").onclick = () => send({ type: "ready", ready: !game.room.ready[game.role] });
 
 $("restartBtn").onclick = () => send({ type: "restart" });
 
@@ -219,10 +234,14 @@ function onState(msg) {
   const animate = !isNewGame && moveId !== null && moveId !== lastMoveId;
   if (moveId !== lastMoveId) { sqSelected = null; playerClicks = []; }
   game = msg;
+  clockAt = performance.now();
   lastMoveId = moveId;
   waitingServer = false;
   storage((s) => s.setItem("chessRoom", JSON.stringify({ room: msg.room.id, role: msg.role })));
   show("gameView");
+  $("waitView").classList.toggle("hidden", msg.room.started);
+  $("playView").classList.toggle("hidden", !msg.room.started);
+  if (!msg.room.started) { renderWaiting(); return; }
   renderSide();
   if (animate) startAnimation(msg.lastMove);
 }
@@ -247,6 +266,7 @@ function renderSide() {
   if (room.status === "waiting") status = "Esperando o outro jogador entrar...";
   else if (room.status === "checkmate") status = game.whiteToMove ? "Pretas venceram por xeque-mate" : "Brancas venceram por xeque-mate";
   else if (room.status === "stalemate") status = "Empate por afogamento";
+  else if (room.status === "timeout") status = timeoutText();
   else if (myTurn()) status = "Sua vez!";
   else status = game.whiteToMove ? "Vez das brancas" : "Vez das pretas";
   if (game.role === "spectator") status += " (você está assistindo)";
@@ -256,7 +276,107 @@ function renderSide() {
     ? "Espectadores: " + game.spectatorNames.join(", ") : "";
   $("lastMove").textContent = game.lastMove ? "Último lance: " + game.lastMove.notation : "";
   $("restartBtn").classList.toggle("hidden",
-    !(isPlayer() && (room.status === "checkmate" || room.status === "stalemate")));
+    !(isPlayer() && ["checkmate", "stalemate", "timeout"].includes(room.status)));
+  renderClocks();
+}
+
+// ---------- sala de espera ----------
+
+function isOwner() {
+  return game.room.owner === me;
+}
+
+function kickButton(username) {
+  const btn = el("button", { className: "kick", textContent: "Remover" });
+  btn.onclick = () => {
+    if (confirm(`Remover ${username} da sala? Essa pessoa não poderá voltar.`)) send({ type: "kick", username });
+  };
+  return btn;
+}
+
+function seatCard(color) {
+  const { room } = game;
+  const name = room[color];
+  const ready = name && room.ready[color];
+  const nameLine = name
+    ? [el("span", { className: "dot" + (game.online[color] ? " on" : "") }), name + (name === me ? " (você)" : "")]
+    : [el("span", { className: "muted", textContent: "— vago —" })];
+  if (name === room.owner) nameLine.push(el("span", { className: "badge owner", textContent: "dono" }));
+  const foot = [el("span", {
+    className: "badge" + (ready ? " ready" : ""),
+    textContent: !name ? "Esperando jogador" : ready ? "Pronto ✓" : "Não está pronto",
+  })];
+  if (name && name !== me && isOwner()) foot.push(kickButton(name));
+  const card = $(color === "white" ? "seatWhite" : "seatBlack");
+  card.classList.toggle("is-ready", !!ready);
+  card.replaceChildren(
+    el("div", { className: "seat-head" }, [
+      el("span", { className: "swatch " + color }), color === "white" ? "Brancas" : "Pretas",
+    ]),
+    el("div", { className: "seat-name" }, nameLine),
+    el("div", { className: "seat-foot" }, foot),
+  );
+}
+
+function renderWaiting() {
+  const { room } = game;
+  $("waitTitle").textContent = room.name;
+  $("waitOwner").textContent = `Sala criada por ${room.owner}`;
+  seatCard("white");
+  seatCard("black");
+
+  const list = game.spectatorNames.map((name) => el("li", {}, [
+    el("span", { className: "grow", textContent: name + (name === me ? " (você)" : "") }),
+    ...(isOwner() && name !== me ? [kickButton(name)] : []),
+  ]));
+  $("waitSpectators").replaceChildren(...(list.length ? list
+    : [el("li", { className: "empty", textContent: "Ninguém assistindo ainda" })]));
+
+  let status;
+  if (!room.white || !room.black) status = "Esperando o outro jogador entrar...";
+  else if (isPlayer() && !room.ready[game.role]) status = "Marque \"Estou pronto\" para começar a partida";
+  else status = "A partida começa quando os dois jogadores estiverem prontos";
+  if (game.role === "spectator") status += " (você está assistindo)";
+  $("waitStatus").textContent = status;
+
+  $("readyBtn").classList.toggle("hidden", !isPlayer());
+  if (isPlayer()) {
+    const ready = room.ready[game.role];
+    $("readyBtn").textContent = ready ? "Cancelar pronto" : "Estou pronto";
+    $("readyBtn").className = ready ? "" : "primary";
+  }
+}
+
+function timeoutText() {
+  const { loser, reason } = game.timeout;
+  const winner = loser === "white" ? "Pretas" : "Brancas";
+  const why = reason === "move" ? "ficaram 1 minuto sem jogar" : "esgotaram o tempo total";
+  return `${winner} venceram: as ${ROLE_LABEL[loser]} ${why}`;
+}
+
+// ---------- relógio ----------
+
+function formatTime(seconds) {
+  const s = Math.max(0, Math.ceil(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function renderClocks() {
+  // o servidor manda o tempo restante; aqui só descontamos o que passou desde então
+  const { clock } = game;
+  const passed = clock.running ? (performance.now() - clockAt) / 1000 : 0;
+  const turn = game.whiteToMove ? "white" : "black";
+  for (const color of ["white", "black"]) {
+    const left = clock[color] - (color === turn ? passed : 0);
+    $(color + "Clock").textContent = formatTime(left);
+    $(color + "Clock").classList.toggle("low", clock.running && color === turn && left <= 30);
+    $(color + "Row").classList.toggle("active", clock.running && color === turn);
+  }
+  const moveLeft = clock.moveLeft - passed;
+  $("moveClock").textContent = clock.running ? formatTime(moveLeft) : "--";
+  $("moveClock").classList.toggle("low", clock.running && moveLeft <= 10);
+  const ratio = clock.running ? Math.max(0, moveLeft / clock.moveLimit) : 0;
+  $("moveBar").style.transform = `scaleX(${ratio})`;
 }
 
 // ---------- desenho (mesma lógica do ChessMain.py) ----------
@@ -265,7 +385,7 @@ const canvas = $("board");
 const ctx = canvas.getContext("2d");
 
 function setupCanvas() {
-  // resolução interna maior em telas retina, mas as coordenadas continuam 500x500
+  // resolução interna maior em telas retina, mas as coordenadas continuam width x height
   const dpr = window.devicePixelRatio || 1;
   canvas.width = width * dpr;
   canvas.height = height * dpr;
@@ -283,7 +403,7 @@ function loadImages() {
 }
 
 function colours() {
-  return [COLORS.white, isPlayer() ? COLORS.black : COLORS.gray];
+  return [COLORS.light, isPlayer() ? COLORS.dark : COLORS.darkSpectator];
 }
 
 function drawBoard() {
@@ -296,15 +416,19 @@ function drawBoard() {
       ctx.fillRect(c * sqsize, r * sqsize, sqsize, sqsize);
     }
   }
+  if (game.lastMove && !animation) {
+    ctx.fillStyle = COLORS.lastMove;
+    for (const [r, c] of [game.lastMove.start, game.lastMove.end]) ctx.fillRect(c * sqsize, r * sqsize, sqsize, sqsize);
+  }
 }
 
 function highlightSquares() {
   if (!sqSelected) return;
   const [r, c] = sqSelected;
   if (game.board[r][c][0] !== (game.whiteToMove ? "w" : "b")) return;
-  ctx.fillStyle = COLORS.darkGray;
+  ctx.fillStyle = COLORS.selected;
   ctx.fillRect(c * sqsize, r * sqsize, sqsize, sqsize);
-  ctx.fillStyle = COLORS.blue;
+  ctx.fillStyle = COLORS.target;
   for (const [sr, sc, er, ec] of game.validMoves) {
     if (sr === r && sc === c) ctx.fillRect(ec * sqsize, er * sqsize, sqsize, sqsize);
   }
@@ -324,12 +448,14 @@ function drawPieces(board) {
 }
 
 function drawText(text) {
+  ctx.fillStyle = "rgba(0,34,77,0.78)";
+  ctx.fillRect(0, height / 2 - 30, width, 60);
   ctx.font = 'bold 21px Helvetica, Arial, sans-serif';
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillStyle = COLORS.black;
   ctx.fillText(text, width / 2, height / 2);
-  ctx.fillStyle = "rgb(255,0,0)";
+  ctx.fillStyle = "#FF204E";
   ctx.fillText(text, width / 2 + 2, height / 2 + 2);
 }
 
@@ -359,7 +485,8 @@ function drawAnimationFrame(now) {
 
 function render(now) {
   requestAnimationFrame(render);
-  if (view !== "gameView" || !game) return;
+  if (view !== "gameView" || !game || !game.room.started) return;
+  renderClocks();
   if (animation) { drawAnimationFrame(now); return; }
   drawBoard();
   highlightSquares();
@@ -368,6 +495,8 @@ function render(now) {
     drawText(game.whiteToMove ? "O PRETO VENCEU POR CHECKMATE" : "O BRANCO VENCEU POR CHECKMATE");
   } else if (game.room.status === "stalemate") {
     drawText("stalemate");
+  } else if (game.room.status === "timeout") {
+    drawText(game.timeout.loser === "white" ? "O PRETO VENCEU POR TEMPO" : "O BRANCO VENCEU POR TEMPO");
   }
 }
 

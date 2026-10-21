@@ -9,7 +9,7 @@ PORT = int(os.environ.get("PORT", 8080))
 
 def start_application():
     print("==================================================")
-    print("🚀 INICIANDO APLICAÇÃO ONLINE CHESS (navegador)")
+    print("🚀 INICIANDO PAWNTHON CHESS (navegador)")
     print("==================================================\n")
 
     server_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "web", "server.py")
