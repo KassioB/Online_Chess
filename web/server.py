@@ -1,5 +1,6 @@
-''' Servidor do Pawnthon Chess para navegador.
-Uma única porta serve as páginas (HTTP), as rotas de conta (/api/...) e o jogo em tempo real (/ws) '''
+''' Servidor do Pawnthon Chess.
+Uma única porta serve o cliente (o jogo em pygame compilado para WebAssembly pelo pygbag)
+e o WebSocket (/ws) por onde passam o login, o lobby e as partidas em tempo real '''
 
 import asyncio
 import json
@@ -13,73 +14,32 @@ from rooms import Connection, Lobby
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", 8080))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-STATIC_DIR = os.path.join(BASE_DIR, "static")
-IMAGES_DIR = os.path.join(BASE_DIR, "..", "Cliente", "images")
-COOKIE = "chess_session"
+CLIENT_DIR = os.path.join(BASE_DIR, "pawnthon", "build", "web")  # saída do "pygbag --build"
+PYGBAG_CDN = "https://pygame-web.github.io/cdn/"
 
 lobby = Lobby()
 
 
-def setSessionCookie(response, token):
-    response.set_cookie(COOKIE, token, max_age=database.SESSION_TTL, httponly=True, samesite="Lax")
+async def clientFile(request):
+    # index.html, pawnthon.tar.gz e favicon.png gerados pelo pygbag
+    name = request.match_info.get("name") or "index.html"
+    path = os.path.join(CLIENT_DIR, name)
+    if os.path.dirname(os.path.abspath(path)) != CLIENT_DIR or not os.path.isfile(path):
+        raise web.HTTPNotFound(text="Cliente não encontrado. Rode: python run_app.py (ele faz o build com o pygbag)")
+    return web.FileResponse(path, headers={"Cache-Control": "no-cache"})
 
 
-async def readCredentials(request):
-    try:
-        data = await request.json()
-    except Exception:
-        data = {}
-    return str(data.get("username", "")).strip(), str(data.get("password", ""))
-
-
-async def register(request):
-    username, password = await readCredentials(request)
-    error = database.create_user(username, password)
-    if error:
-        return web.json_response({"error": error}, status=400)
-    response = web.json_response({"username": username})
-    setSessionCookie(response, database.create_session(username))
-    return response
-
-
-async def login(request):
-    username, password = await readCredentials(request)
-    user = database.check_login(username, password)
-    if not user:
-        return web.json_response({"error": "Usuário ou senha incorretos"}, status=401)
-    response = web.json_response({"username": user})
-    setSessionCookie(response, database.create_session(user))
-    return response
-
-
-async def logout(request):
-    database.delete_session(request.cookies.get(COOKIE))
-    response = web.json_response({"ok": True})
-    response.del_cookie(COOKIE)
-    return response
-
-
-async def me(request):
-    return web.json_response({"username": database.get_session_user(request.cookies.get(COOKIE))})
-
-
-async def index(request):
-    return web.FileResponse(os.path.join(STATIC_DIR, "index.html"))
+async def cdnRedirect(request):
+    # quando a página é aberta em "localhost", o pygbag acha que está no servidor de testes dele
+    # e busca os pacotes (ex.: pygame-ce) em /cdn/ deste mesmo endereço; mandamos para o CDN oficial
+    raise web.HTTPFound(PYGBAG_CDN + request.match_info["path"])
 
 
 async def wsHandler(request):
-    username = database.get_session_user(request.cookies.get(COOKIE))
     ws = web.WebSocketResponse(heartbeat=20)
     await ws.prepare(request)
-    if not username:
-        await ws.close(code=4001, message=b"login required")
-        return ws
-
-    conn = Connection(ws, username)
-    lobby.conns.add(conn)
-    print(f"{username} conectado")
-    await conn.send({"type": "hello", "username": username})
-    await conn.send(lobby.roomList())
+    conn = Connection(ws, None)  # só ganha um usuário depois do login
+    await conn.send({"type": "need_login"})
 
     try:
         async for msg in ws:
@@ -89,18 +49,67 @@ async def wsHandler(request):
                 data = json.loads(msg.data)
             except ValueError:
                 continue
+            if conn.username is None:
+                await handleAuth(conn, data)
+                continue
             error = await handleMessage(conn, data)
             if error:
                 await conn.send({"type": "error", "message": error})
     finally:
-        lobby.conns.discard(conn)
-        await lobby.leave(conn, explicit=False)
-        print(f"{username} desconectado")
+        if conn.username:
+            lobby.conns.discard(conn)
+            await lobby.leave(conn, explicit=False)
+            print(f"{conn.username} desconectado")
     return ws
+
+
+async def handleAuth(conn, data):
+    # login, cadastro ou retomada de sessão (token salvo no navegador)
+    kind = data.get("type")
+    username = str(data.get("username", "")).strip()
+    password = str(data.get("password", ""))
+
+    if kind == "auth":
+        token = str(data.get("token", ""))
+        user = database.get_session_user(token)
+        if not user:
+            await conn.send({"type": "need_login"})
+            return
+    elif kind == "login":
+        # o hash da senha é lento de propósito: roda numa thread para não congelar as partidas
+        user = await asyncio.to_thread(database.check_login, username, password)
+        if not user:
+            await conn.send({"type": "auth_error", "message": "Usuário ou senha incorretos"})
+            return
+        token = database.create_session(user)
+    elif kind == "register":
+        error = await asyncio.to_thread(database.create_user, username, password)
+        if error:
+            await conn.send({"type": "auth_error", "message": error})
+            return
+        user, token = username, database.create_session(username)
+    else:
+        await conn.send({"type": "need_login"})
+        return
+
+    conn.username, conn.token = user, token
+    lobby.conns.add(conn)
+    print(f"{user} conectado")
+    await conn.send({"type": "hello", "username": user, "token": token})
+    await conn.send(lobby.roomList())
 
 
 async def handleMessage(conn, data):
     kind = data.get("type")
+
+    if kind == "logout":
+        await lobby.leave(conn)
+        lobby.conns.discard(conn)
+        database.delete_session(conn.token)
+        print(f"{conn.username} saiu da conta")
+        conn.username = conn.token = None
+        await conn.send({"type": "need_login"})
+        return None
 
     if kind == "create_room":
         room = lobby.createRoom(data.get("name"), conn.username)
@@ -187,14 +196,10 @@ def createApp():
     database.init_db()
     app = web.Application()
     app.add_routes([
-        web.get("/", index),
         web.get("/ws", wsHandler),
-        web.post("/api/register", register),
-        web.post("/api/login", login),
-        web.post("/api/logout", logout),
-        web.get("/api/me", me),
-        web.static("/static", STATIC_DIR),
-        web.static("/images", IMAGES_DIR),
+        web.get("/cdn/{path:.+}", cdnRedirect),
+        web.get("/", clientFile),
+        web.get("/{name}", clientFile),
     ])
     app.on_startup.append(startBackground)
     app.on_cleanup.append(stopBackground)

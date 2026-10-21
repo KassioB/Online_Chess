@@ -22,6 +22,9 @@ def _connect():
 
 def init_db():
     with _connect() as conn:
+        # WAL: leituras não esperam escritas e não há um arquivo de journal criado/apagado a cada
+        # escrita (no Windows o antivírus às vezes trava esse arquivo e o login demorava segundos)
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

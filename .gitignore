@@ -46,3 +46,7 @@ __pycache__/
 
 # banco de contas da versão web
 web/chess.db
+web/chess.db-*
+
+# build do cliente gerado pelo pygbag (python web/build_client.py)
+web/pawnthon/build/

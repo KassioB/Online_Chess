@@ -21,6 +21,7 @@ class Connection:
     def __init__(self, ws, username):
         self.ws = ws
         self.username = username
+        self.token = None  # sessão do login, apagada no logout
         self.room = None
         self.role = None
 
