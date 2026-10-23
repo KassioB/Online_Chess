@@ -42,7 +42,13 @@ jobs:
           key: buildozer-${{ hashFiles('buildozer.spec') }}
           restore-keys: buildozer-
       - run: pip install buildozer cython==0.29.37 virtualenv
-      - run: buildozer android debug
+      - name: Compila o aplicativo
+        run: set -o pipefail; buildozer android debug 2>&1 | tee build.log
+      - name: Mostra o fim do log (aparece nas anotações da execução)
+        if: failure()
+        run: |
+          tail -n 60 build.log | python3 -c "import sys; t=sys.stdin.read().replace('%','%25').replace('','').replace('
+','%0A'); print('::error title=Fim do log do Buildozer::' + t)"
       - name: Renomeia o .apk
         run: cp bin/*.apk PawnthonChess.apk
       - uses: actions/upload-artifact@v4
