@@ -33,7 +33,7 @@ jobs:
       - name: Dependências do sistema
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends git zip unzip autoconf automake libtool             pkg-config zlib1g-dev libncurses-dev cmake libffi-dev libssl-dev build-essential ccache
+          sudo apt-get install -y --no-install-recommends git zip unzip autoconf automake libtool             pkg-config zlib1g-dev libncurses-dev cmake libffi-dev libssl-dev build-essential ccache \n            libltdl-dev libtool-bin
       - name: Cache do Buildozer (SDK/NDK e receitas)
         uses: actions/cache@v4
         with:
