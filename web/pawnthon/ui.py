@@ -33,6 +33,7 @@ class UI:
         self.typed = ""
         self.submitted = None
         self.domFocus = ""
+        self.keyboardUp = False  # teclado virtual do Android
         self.rects = {}  # nome -> retângulo dos botões do quadro (usado só pelos testes)
 
     # ---------- quadro ----------
@@ -77,6 +78,12 @@ class UI:
                 if e.key == pygame.K_TAB:
                     i = self.order.index(self.focus)
                     self.focus = self.order[(i + 1) % len(self.order)]
+        if browser.ANDROID:
+            # no celular o teclado só aparece se o pygame pedir; some quando nenhum campo tem foco
+            want = self.focus in self.order
+            if want != self.keyboardUp:
+                self.keyboardUp = want
+                (pygame.key.start_text_input if want else pygame.key.stop_text_input)()
         self.overlay.publish(self.rects)
         self.overlay.end()
         if self.hand != self.lastHand:

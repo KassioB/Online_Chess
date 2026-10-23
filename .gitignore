@@ -56,3 +56,7 @@ web/pawnthon/build_id.txt
 # aplicativo baixável (PyInstaller)
 /dist
 /build_desktop
+
+# Android (Buildozer)
+/.buildozer
+/bin

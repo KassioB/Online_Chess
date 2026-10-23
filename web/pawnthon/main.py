@@ -59,6 +59,9 @@ def desktopScreen(width, height):
 
 
 def openDesktopWindow():
+    if browser.ANDROID:
+        # celular: a janela é a tela inteira (0, 0 = tamanho da tela)
+        return pygame.display.set_mode((0, 0))
     if sys.platform == "win32":
         # sem isto a barra de tarefas do Windows agrupa o jogo como "python" e mostra o ícone do Python
         import ctypes

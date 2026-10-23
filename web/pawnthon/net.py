@@ -60,7 +60,10 @@ class BrowserSocket:
 class DesktopSocket:
     def __init__(self):
         # import "escondido" para o pygbag não tentar empacotar o aiohttp no navegador
-        self.aiohttp = importlib.import_module("aiohttp")
+        try:
+            self.aiohttp = importlib.import_module("aiohttp")
+        except ImportError:
+            self.aiohttp = None  # Android: sem aiohttp (difícil de compilar), usa o "websockets", em Python puro
         self.inbox = []
         self.outbox = asyncio.Queue()
         self.status = "closed"
@@ -74,8 +77,34 @@ class DesktopSocket:
         self.status = "connecting"
         self.task = asyncio.get_event_loop().create_task(self._run(url))
 
+    async def _runWebsockets(self, url):
+        import ssl
+        import websockets
+        context = None
+        if url.startswith("wss"):
+            # o Android não traz certificados do sistema para o Python: usa os do certifi
+            import certifi
+            context = ssl.create_default_context(cafile=certifi.where())
+        async with websockets.connect(url, ssl=context, ping_interval=20) as ws:
+            self.status = "open"
+
+            async def sendLoop():
+                while True:
+                    await ws.send(await self.outbox.get())
+
+            sender = asyncio.ensure_future(sendLoop())
+            try:
+                async for msg in ws:
+                    self.inbox.append(msg)
+            finally:
+                sender.cancel()
+
     async def _run(self, url):
         try:
+            if self.aiohttp is None:
+                await self._runWebsockets(url)
+                self.status = "closed"
+                return
             async with self.aiohttp.ClientSession() as session:
                 async with session.ws_connect(url, heartbeat=20) as ws:
                     self.status = "open"

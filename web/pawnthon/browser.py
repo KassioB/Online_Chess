@@ -11,6 +11,7 @@ import sys
 import webbrowser
 
 BROWSER = sys.platform == "emscripten"
+ANDROID = "ANDROID_ARGUMENT" in os.environ  # o python-for-android define esta variável dentro do aplicativo
 
 if BROWSER:
     import platform
