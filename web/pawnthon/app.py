@@ -79,8 +79,19 @@ class App:
 
         self.toastText = None
         self.toastUntil = 0
+        self.drawnAt = 0
+        self.redraw = True
 
     # ---------- utilidades ----------
+
+    def resize(self, screen, portrait):
+        # a janela do navegador mudou de tamanho/orientação: refaz as medidas sem perder a partida
+        self.screen = screen
+        self.W, self.H = screen.get_size()
+        self.portrait = portrait
+        self.ui.screen = screen
+        self.ui.overlay.reset(screen.get_size())
+        self.redraw = True
 
     def toast(self, text):
         self.toastText, self.toastUntil = text, time.time() + 3
@@ -93,8 +104,9 @@ class App:
     @property
     def fps(self):
         # menos quadros parado economiza bateria; animação e digitação a 60
-        busy = self.board.animating or self.ui.down or self.ui.domFocus or self.ui.focus
-        return 60 if busy else 30
+        if self.board.animating or self.ui.down:
+            return 60
+        return 30 if (self.ui.domFocus or self.ui.focus) else 20
 
     # ---------- mensagens do servidor ----------
 
@@ -194,7 +206,8 @@ class App:
             if e.type == pygame.QUIT:
                 self.running = False
         now = time.time()
-        for msg in self.net.update(now):
+        messages = self.net.update(now)
+        for msg in messages:
             self.handle(msg)
         online = self.net.online
         if online and not self.wasOnline:
@@ -202,7 +215,16 @@ class App:
             self.everOnline = True
         if not online and self.wasOnline:
             self.toast("Conexão perdida, reconectando...")
+        changed = online != self.wasOnline
         self.wasOnline = online
+
+        # parado e sem novidade não há o que redesenhar: poupa o computador fraco (o relógio, o
+        # cursor piscando e os avisos pedem um quadro a cada 0,25 s; digitar no campo real da
+        # página não gera evento no pygame, então enquanto há foco redesenha sempre)
+        if not (events or messages or changed or self.board.animating or self.ui.down
+                or self.ui.domFocus or self.ui.focus or now - self.drawnAt > 0.25 or self.redraw):
+            return False
+        self.drawnAt, self.redraw = now, False
 
         ui = self.ui
         ui.begin(events)
@@ -222,6 +244,7 @@ class App:
             theme.draw(self.screen, "Conectando ao servidor...", content.center, 18, theme.MUTED, anchor="center")
         self.drawToast(content)
         ui.end()
+        return True
 
     # ---------- topo e rodapé ----------
 

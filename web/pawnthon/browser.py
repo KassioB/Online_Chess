@@ -182,6 +182,11 @@ class Overlay:
         self.canvas = None
         self.frame = 0
 
+    def reset(self, screenSize):
+        self.screenSize = screenSize
+        self.canvas = None
+        self.placed = {}  # força reposicionar tudo no próximo quadro
+
     def begin(self):
         self.used = set()
         self.frame += 1

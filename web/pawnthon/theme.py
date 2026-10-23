@@ -32,6 +32,16 @@ def u(n):
     return int(round(n * S))
 
 
+def setScale(scale):
+    # trocar a escala invalida o que foi pré-calculado com a anterior
+    global S, _bg
+    S = scale
+    _texts.clear()
+    _shadows.clear()
+    _layers.clear()
+    _bg = None
+
+
 # ---------- fontes e texto ----------
 
 FONT_FILES = {
@@ -100,9 +110,12 @@ def rrect(surf, color, rect, radius, width=0):
 
 def card(surf, rect, radius=12, accentTop=False, color=CARD):
     # sombra + cartão com borda vinho, igual aos cartões da versão anterior do site
-    shadow = pygame.Surface((rect.w + u(24), rect.h + u(24)), pygame.SRCALPHA)
-    for i in range(6):
-        pygame.draw.rect(shadow, (0, 0, 0, 14), shadow.get_rect().inflate(-u(4) * i, -u(4) * i), border_radius=u(radius + 12 - 2 * i))
+    key = (rect.size, radius)
+    shadow = _shadows.get(key)
+    if shadow is None:  # montar a sombra custa caro e ela é igual a cada quadro
+        shadow = _shadows[key] = pygame.Surface((rect.w + u(24), rect.h + u(24)), pygame.SRCALPHA)
+        for i in range(6):
+            pygame.draw.rect(shadow, (0, 0, 0, 14), shadow.get_rect().inflate(-u(4) * i, -u(4) * i), border_radius=u(radius + 12 - 2 * i))
     surf.blit(shadow, (rect.x - u(12), rect.y - u(4)))
     if accentTop:
         # faixa vermelha no topo: o cartão vermelho fica por baixo, deslocado 4px
@@ -114,8 +127,13 @@ def card(surf, rect, radius=12, accentTop=False, color=CARD):
 
 
 def alphaRect(surf, rgba, rect, radius=0):
-    layer = pygame.Surface(rect.size, pygame.SRCALPHA)
-    pygame.draw.rect(layer, rgba, layer.get_rect(), border_radius=u(radius) if radius else 0)
+    key = (rgba, rect.size, radius)
+    layer = _layers.get(key)
+    if layer is None:
+        if len(_layers) > 200:
+            _layers.clear()
+        layer = _layers[key] = pygame.Surface(rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(layer, rgba, layer.get_rect(), border_radius=u(radius) if radius else 0)
     surf.blit(layer, rect.topleft)
 
 
@@ -137,6 +155,8 @@ def background(surf):
 
 
 _bg = None
+_shadows = {}
+_layers = {}
 
 
 # ---------- imagens ----------
