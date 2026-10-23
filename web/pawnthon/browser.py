@@ -25,6 +25,17 @@ window.PawnDom = {
         return JSON.stringify([r.left + window.scrollX, r.top + window.scrollY, r.width, r.height]);
     },
     viewport() { return JSON.stringify([window.innerWidth, window.innerHeight, window.devicePixelRatio || 1]); },
+    // o pygbag só ajusta o tamanho do canvas na página quando o navegador avisa "resize"; no celular
+    // (barra de endereço, teclado, rotação) esse aviso nem sempre vem, e o jogo fica fora de medida
+    fits(w, h) {
+        const c = document.getElementById("canvas");
+        const r = c.getBoundingClientRect();
+        if (!r.width || !r.height) return 1;
+        const sameShape = Math.abs(r.width / r.height - w / h) < 0.02 * (w / h);
+        const filled = Math.abs(r.width - window.innerWidth) <= 3 || Math.abs(r.height - window.innerHeight) <= 3;
+        return sameShape && filled ? 1 : 0;
+    },
+    refit() { if (window.window_resize) window.window_resize(); },
     isTouch() { return ("ontouchstart" in window) || navigator.maxTouchPoints > 0 ? 1 : 0; },
     base(el, id) {
         el.id = id;
@@ -106,6 +117,16 @@ def viewport():
     if not BROWSER:
         return None
     return json.loads(str(dom.viewport()))
+
+
+def canvasFits(size):
+    ''' o canvas da página tem o mesmo formato do quadro e ocupa a janela? (sempre sim no desktop) '''
+    return not BROWSER or int(dom.fits(size[0], size[1])) == 1
+
+
+def refitCanvas():
+    if BROWSER:
+        dom.refit()
 
 
 def isTouch():

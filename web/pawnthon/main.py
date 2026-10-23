@@ -44,6 +44,25 @@ def chooseScreen(quality=1.0):
     return (round(designW * scale), round(designH * scale)), scale, portrait
 
 
+def desktopScreen(width, height):
+    ''' Mesma lógica do navegador, mas no desktop o quadro tem sempre o tamanho exato da janela
+    (sem esticar): a escala sai da janela e o desenho se adapta, paisagem ou retrato. '''
+    aspect = width / max(1, height)
+    if aspect >= 0.95:
+        scale = clamp(min(height / 800, width / 1100), 0.4, 3.0)
+        portrait = False
+    else:
+        scale = clamp(min(width / 480, height / 860), 0.4, 3.0)
+        portrait = True
+    return scale, portrait
+
+
+def openDesktopWindow():
+    info = pygame.display.Info()
+    width, height = min(1280, int(info.current_w * 0.92)), min(800, int(info.current_h * 0.88))
+    return pygame.display.set_mode((width, height), pygame.RESIZABLE)
+
+
 def savedQuality():
     try:
         return clamp(int(browser.storageGet(QUALITY_KEY) or 0), 0, len(QUALITIES) - 1)
@@ -54,11 +73,16 @@ def savedQuality():
 async def main():
     pygame.init()
     level = savedQuality()  # a escolha de uma visita anterior vale para as próximas
-    size, scale, portrait = chooseScreen(QUALITIES[level])
+    if browser.BROWSER:
+        size, scale, portrait = chooseScreen(QUALITIES[level])
+        screen = pygame.display.set_mode(size)
+    else:
+        screen = openDesktopWindow()
+        scale, portrait = desktopScreen(*screen.get_size())
     theme.setScale(scale)
-    screen = pygame.display.set_mode(size)
     pygame.display.set_caption("Pawnthon Chess")
     pygame.display.set_icon(pygame.image.load(theme.BASE + "/favicon.png"))
+    browser.refitCanvas()
     app = App(screen, portrait)
     clock = pygame.time.Clock()
     frames = 0
@@ -67,6 +91,16 @@ async def main():
     while app.running:
         started = time.perf_counter()
         events = pygame.event.get()
+        if not browser.BROWSER:
+            # janela redimensionada (arrastando a borda, maximizar, F11): refaz as medidas
+            screen = pygame.display.get_surface()
+            if screen.get_size() != (app.W, app.H):
+                scale, portrait = desktopScreen(*screen.get_size())
+                theme.setScale(scale)
+                app.resize(screen, portrait)
+            for e in events:
+                if e.type == pygame.KEYDOWN and e.key == pygame.K_F11:
+                    pygame.display.toggle_fullscreen()
         drawn = app.frame(events)
         if drawn:
             pygame.display.flip()
@@ -83,11 +117,14 @@ async def main():
                     theme.setScale(scale)
                     screen = pygame.display.set_mode(size)
                     app.resize(screen, portrait)
+                    browser.refitCanvas()
                     pending = None
                 else:
                     pending = wanted[0]
             else:
                 pending = None
+                if not browser.canvasFits(screen.get_size()):
+                    browser.refitCanvas()  # canvas fora de medida (celular: barra de endereço, teclado)
 
         # computador fraco: mede quanto custa desenhar um quadro e, se não der conta, reduz a resolução
         if browser.BROWSER and drawn and level < len(QUALITIES) - 1 and spent < 250:  # ignora travadas pontuais (aba em segundo plano)
@@ -101,6 +138,7 @@ async def main():
                     theme.setScale(scale)
                     screen = pygame.display.set_mode(size)
                     app.resize(screen, portrait)
+                    browser.refitCanvas()
                 work = count = 0
 
         clock.tick(app.fps)

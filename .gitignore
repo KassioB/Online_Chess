@@ -52,3 +52,7 @@ web/chess.db-*
 # build do cliente gerado pelo pygbag (python web/build_client.py)
 web/pawnthon/build/
 web/pawnthon/build_id.txt
+
+# aplicativo baixável (PyInstaller)
+/dist
+/build_desktop

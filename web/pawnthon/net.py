@@ -11,6 +11,7 @@ import os
 import sys
 
 BROWSER = sys.platform == "emscripten"
+DEFAULT_SERVER = "wss://pawnthon-chess.onrender.com/ws"
 
 # ponte mínima: guarda as mensagens que chegam numa fila que o Python lê a cada quadro
 JS_BRIDGE = """
@@ -66,7 +67,8 @@ class DesktopSocket:
         self.task = None
 
     def defaultUrl(self):
-        return os.environ.get("PAWNTHON_URL", "ws://localhost:8080/ws")
+        # o aplicativo baixado joga no mesmo servidor do site; PAWNTHON_URL aponta para outro (ex.: local)
+        return os.environ.get("PAWNTHON_URL", DEFAULT_SERVER)
 
     def connect(self, url):
         self.status = "connecting"

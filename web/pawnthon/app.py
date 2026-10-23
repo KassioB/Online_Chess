@@ -80,6 +80,7 @@ class App:
         self.toastText = None
         self.toastUntil = 0
         self.drawnAt = 0
+        self.startedAt = time.time()
         self.redraw = True
 
     # ---------- utilidades ----------
@@ -242,6 +243,10 @@ class App:
                 self.drawWaiting(content)
         else:
             theme.draw(self.screen, "Conectando ao servidor...", content.center, 18, theme.MUTED, anchor="center")
+            if not browser.BROWSER and now - self.startedAt > 5:
+                # no plano gratuito do Render o servidor dorme e leva até ~1 min para acordar
+                theme.draw(self.screen, "O servidor pode estar acordando, isso leva até 1 minuto...",
+                           (content.centerx, content.centery + u(34)), 14, theme.MUTED, anchor="center")
         self.drawToast(content)
         ui.end()
         return True
