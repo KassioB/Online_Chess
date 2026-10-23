@@ -23,6 +23,8 @@ fullscreen = 1
 android.permissions = INTERNET
 # versões fixas: o python-for-android mais novo usa o Python 3.14, com o qual a receita do pygame não compila
 p4a.branch = v2024.01.21
+# receita própria do pygame (regera os arquivos Cython que não compilam no Python 3.11)
+p4a.local_recipes = ./p4a-recipes
 android.ndk = 25b
 android.api = 33
 android.minapi = 24

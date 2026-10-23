@@ -9,6 +9,7 @@ on:
     tags: ["v*"]
     paths:
       - buildozer.spec
+      - p4a-recipes/**
       - .github/workflows/android.yml
       - .github/scripts/**
       - web/pawnthon/**
