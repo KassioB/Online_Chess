@@ -15,6 +15,8 @@ from ui import UI
 
 LINKEDIN = "https://www.linkedin.com/in/kassiobcunha/"
 PORTFOLIO = "https://portifolio-web-kassio.vecel.app/"
+RELEASES = "https://github.com/KassioB/Online_Chess/releases/latest/download/"
+DOWNLOADS = (("dl_windows", "Windows", "PawnthonChess.exe"), ("dl_linux", "Linux", "PawnthonChess-linux.tar.gz"))
 TECH = "Xadrez desenvolvido somente com Python"
 
 ROLE_LABEL = {"white": "brancas", "black": "pretas", "spectator": "espectador"}
@@ -412,6 +414,24 @@ class App:
         if ui.button(pygame.Rect(left + qw, y, aw, u(24)), action, "link", size=14):
             self.authMode = "login" if register else "register"
             self.authError = ""
+        if browser.BROWSER:
+            self.drawDownloads(card, area)
+
+    def drawDownloads(self, card, area):
+        # só no navegador: convida a baixar o aplicativo, que roda bem mais leve que o WebAssembly
+        s, ui = self.screen, self.ui
+        btnW, btnH, gap = u(136), u(34), u(12)
+        top = card.bottom + u(22)
+        if top + u(24) + btnH > area.bottom:
+            return  # janela baixa demais: não cabe sem encostar no rodapé
+        theme.draw(s, "Baixe o aplicativo, bem mais rápido que no navegador:", (card.centerx, top), 13, theme.MUTED, anchor="midtop")
+        x = card.centerx - (btnW * 2 + gap) // 2
+        for i, (id, label, file) in enumerate(DOWNLOADS):
+            rect = pygame.Rect(x + i * (btnW + gap), top + u(24), btnW, btnH)
+            hover = ui.link(id, rect, RELEASES + file, f"Baixar para {label}")
+            theme.rrect(s, theme.RED if hover else theme.CARD2, rect, 8)
+            theme.rrect(s, theme.RED if hover else theme.WINE, rect, 8, max(1, u(1)))
+            theme.draw(s, f"Baixar {label}", rect.center, 13, theme.WHITE, "semibold", "center")
 
     def drawBrandName(self, cx, y, size):
         w1 = theme.font(size, "bold").size("Pawnthon ")[0]

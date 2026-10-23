@@ -4,6 +4,7 @@ No navegador ele roda em WebAssembly pelo pygbag (python -m pygbag web/pawnthon)
 no desktop roda direto com "python main.py" e conversa com o mesmo servidor. '''
 
 import asyncio
+import sys
 import time
 
 import pygame
@@ -58,6 +59,15 @@ def desktopScreen(width, height):
 
 
 def openDesktopWindow():
+    if sys.platform == "win32":
+        # sem isto a barra de tarefas do Windows agrupa o jogo como "python" e mostra o ícone do Python
+        import ctypes
+        try:
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("KassioBC.PawnthonChess")
+        except (AttributeError, OSError):
+            pass
+    # o ícone tem de ser definido antes de abrir a janela (senão o Windows mantém o do pygame)
+    pygame.display.set_icon(pygame.image.load(theme.BASE + "/img/logo_mark.png"))
     info = pygame.display.Info()
     width, height = min(1280, int(info.current_w * 0.92)), min(800, int(info.current_h * 0.88))
     return pygame.display.set_mode((width, height), pygame.RESIZABLE)
@@ -81,7 +91,8 @@ async def main():
         scale, portrait = desktopScreen(*screen.get_size())
     theme.setScale(scale)
     pygame.display.set_caption("Pawnthon Chess")
-    pygame.display.set_icon(pygame.image.load(theme.BASE + "/favicon.png"))
+    if browser.BROWSER:
+        pygame.display.set_icon(pygame.image.load(theme.BASE + "/favicon.png"))
     browser.refitCanvas()
     app = App(screen, portrait)
     clock = pygame.time.Clock()
