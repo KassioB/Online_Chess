@@ -10,6 +10,7 @@ on:
     paths:
       - buildozer.spec
       - .github/workflows/android.yml
+      - .github/scripts/**
       - web/pawnthon/**
   workflow_dispatch:
 
