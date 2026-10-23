@@ -21,6 +21,9 @@ orientation = portrait
 fullscreen = 1
 
 android.permissions = INTERNET
+# versões fixas: o python-for-android mais novo usa o Python 3.14, com o qual a receita do pygame não compila
+p4a.branch = v2024.01.21
+android.ndk = 25b
 android.api = 33
 android.minapi = 24
 android.archs = arm64-v8a
