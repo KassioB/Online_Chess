@@ -1,44 +1,66 @@
-''' Guarda as contas dos jogadores e as sessões de login em um banco SQLite '''
+''' Guarda as contas dos jogadores e as sessões de login no PostgreSQL.
+O endereço do banco vem da variável de ambiente DATABASE_URL (no Render ela é configurada no
+painel; no computador fica no arquivo .env na raiz do projeto). '''
 
 import hashlib
 import hmac
 import os
 import re
 import secrets
-import sqlite3
-import time
 
-DB_PATH = os.environ.get("CHESS_DB", os.path.join(os.path.dirname(__file__), "chess.db"))
-SESSION_TTL = 7 * 24 * 3600  # sessões duram 7 dias
+import psycopg
+from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
+
+SESSION_TTL_DAYS = 7  # sessões duram 7 dias
 PBKDF2_ITERATIONS = 200_000
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{3,20}$")
 
+_pool = None
+
 
 def _connect():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
+    return _pool.connection()
 
 
 def init_db():
+    global _pool
+    url = os.environ.get("DATABASE_URL")
+    if not url:
+        raise SystemExit("Defina DATABASE_URL com o endereço do PostgreSQL (veja o .env.example)")
+    _pool = ConnectionPool(
+        url,
+        min_size=1,
+        max_size=5,
+        # prepare_threshold=None: sem prepared statements, que não funcionam através do pooler do Neon
+        kwargs={"row_factory": dict_row, "prepare_threshold": None},
+        # o Neon desliga o banco quando fica parado: testa a conexão antes de usar e reconecta se caiu
+        check=ConnectionPool.check_connection,
+        open=True,
+    )
     with _connect() as conn:
-        # WAL: leituras não esperam escritas e não há um arquivo de journal criado/apagado a cada
-        # escrita (no Windows o antivírus às vezes trava esse arquivo e o login demorava segundos)
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.executescript("""
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                username TEXT UNIQUE NOT NULL COLLATE NOCASE,
-                password_hash BLOB NOT NULL,
-                salt BLOB NOT NULL,
-                created_at REAL NOT NULL
-            );
+                id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                username TEXT NOT NULL,
+                password_hash BYTEA NOT NULL,
+                salt BYTEA NOT NULL,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )""")
+        # nomes de usuário não diferenciam maiúsculas de minúsculas ("Kassio" e "kassio" são o mesmo)
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower ON users (lower(username))")
+        conn.execute("""
             CREATE TABLE IF NOT EXISTS sessions (
                 token TEXT PRIMARY KEY,
-                user_id INTEGER NOT NULL REFERENCES users(id),
-                expires_at REAL NOT NULL
-            );
-        """)
+                user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                expires_at TIMESTAMPTZ NOT NULL
+            )""")
+        conn.execute("DELETE FROM sessions WHERE expires_at <= now()")
+
+
+def close_db():
+    if _pool is not None:
+        _pool.close()
 
 
 def _hash_password(password, salt):
@@ -55,9 +77,9 @@ def create_user(username, password):
     try:
         with _connect() as conn:
             conn.execute(
-                "INSERT INTO users (username, password_hash, salt, created_at) VALUES (?, ?, ?, ?)",
-                (username, _hash_password(password, salt), salt, time.time()))
-    except sqlite3.IntegrityError:
+                "INSERT INTO users (username, password_hash, salt) VALUES (%s, %s, %s)",
+                (username, _hash_password(password, salt), salt))
+    except psycopg.errors.UniqueViolation:
         return "Esse nome de usuário já existe"
     return None
 
@@ -65,8 +87,8 @@ def create_user(username, password):
 def check_login(username, password):
     # retorna o nome do usuário (como foi cadastrado) se a senha estiver certa
     with _connect() as conn:
-        row = conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
-    if row and hmac.compare_digest(row["password_hash"], _hash_password(password, row["salt"])):
+        row = conn.execute("SELECT * FROM users WHERE lower(username) = lower(%s)", (username,)).fetchone()
+    if row and hmac.compare_digest(bytes(row["password_hash"]), _hash_password(password, bytes(row["salt"]))):
         return row["username"]
     return None
 
@@ -74,9 +96,10 @@ def check_login(username, password):
 def create_session(username):
     token = secrets.token_urlsafe(32)
     with _connect() as conn:
-        user_id = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()["id"]
-        conn.execute("INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
-                     (token, user_id, time.time() + SESSION_TTL))
+        conn.execute(
+            "INSERT INTO sessions (token, user_id, expires_at) "
+            "SELECT %s, id, now() + make_interval(days => %s) FROM users WHERE lower(username) = lower(%s)",
+            (token, SESSION_TTL_DAYS, username))
     return token
 
 
@@ -86,10 +109,10 @@ def get_session_user(token):
     with _connect() as conn:
         row = conn.execute(
             "SELECT users.username FROM sessions JOIN users ON users.id = sessions.user_id "
-            "WHERE sessions.token = ? AND sessions.expires_at > ?", (token, time.time())).fetchone()
+            "WHERE sessions.token = %s AND sessions.expires_at > now()", (token,)).fetchone()
     return row["username"] if row else None
 
 
 def delete_session(token):
     with _connect() as conn:
-        conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+        conn.execute("DELETE FROM sessions WHERE token = %s", (token,))

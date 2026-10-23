@@ -5,16 +5,24 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 APP_DIR = os.path.join(BASE_DIR, "pawnthon")
 OUT_DIR = os.path.join(APP_DIR, "build", "web")
+BUILD_ID_FILE = os.path.join(APP_DIR, "build_id.txt")
 
 
 def build():
+    # identificador deste build: vai dentro do pacote e o servidor manda o mesmo para o cliente,
+    # assim uma aba aberta com uma versão antiga percebe a diferença e recarrega sozinha
+    with open(BUILD_ID_FILE, "w", encoding="utf-8") as f:
+        f.write(str(int(time.time())))
     cmd = [
         sys.executable, "-m", "pygbag", "--build",
-        "--ume_block", "0",  # não precisa de clique para começar: o jogo não usa som
+        # não precisa de clique para começar: o único som (xeque) usa o WebAudio, liberado
+        # pelo navegador depois que o jogador já clicou na página (login, lobby...)
+        "--ume_block", "0",
         "--title", "Pawnthon Chess",
         "--template", os.path.join(BASE_DIR, "pawnthon.tmpl"),
         APP_DIR,

@@ -1,0 +1,15 @@
+# Deploy no Render: Dashboard > New > Blueprint > escolha este repositório.
+# O DATABASE_URL (do Neon) é pedido no painel durante a criação e nunca fica no código.
+services:
+  - type: web
+    name: pawnthon-chess
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt && python web/build_client.py
+    startCommand: python web/server.py
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: DATABASE_URL
+        sync: false

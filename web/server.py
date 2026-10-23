@@ -14,8 +14,33 @@ from rooms import Connection, Lobby
 HOST = os.environ.get("HOST", "0.0.0.0")
 PORT = int(os.environ.get("PORT", 8080))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def loadEnvFile():
+    # no computador as configurações (ex.: DATABASE_URL) ficam no .env da raiz do projeto;
+    # no Render elas já vêm do painel, e o que já estiver definido no ambiente tem prioridade
+    path = os.path.join(BASE_DIR, "..", ".env")
+    if not os.path.isfile(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+loadEnvFile()
 CLIENT_DIR = os.path.join(BASE_DIR, "pawnthon", "build", "web")  # saída do "pygbag --build"
 PYGBAG_CDN = "https://pygame-web.github.io/cdn/"
+
+
+def readBuildId():
+    try:
+        with open(os.path.join(BASE_DIR, "pawnthon", "build_id.txt"), encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return None
 
 lobby = Lobby()
 
@@ -26,7 +51,7 @@ async def clientFile(request):
     path = os.path.join(CLIENT_DIR, name)
     if os.path.dirname(os.path.abspath(path)) != CLIENT_DIR or not os.path.isfile(path):
         raise web.HTTPNotFound(text="Cliente não encontrado. Rode: python run_app.py (ele faz o build com o pygbag)")
-    return web.FileResponse(path, headers={"Cache-Control": "no-cache"})
+    return web.FileResponse(path, headers={"Cache-Control": "no-store"})
 
 
 async def cdnRedirect(request):
@@ -39,6 +64,7 @@ async def wsHandler(request):
     ws = web.WebSocketResponse(heartbeat=20)
     await ws.prepare(request)
     conn = Connection(ws, None)  # só ganha um usuário depois do login
+    await conn.send({"type": "build", "id": readBuildId()})
     await conn.send({"type": "need_login"})
 
     try:
@@ -71,23 +97,24 @@ async def handleAuth(conn, data):
 
     if kind == "auth":
         token = str(data.get("token", ""))
-        user = database.get_session_user(token)
+        user = await asyncio.to_thread(database.get_session_user, token)
         if not user:
             await conn.send({"type": "need_login"})
             return
     elif kind == "login":
-        # o hash da senha é lento de propósito: roda numa thread para não congelar as partidas
+        # o banco fica em outro servidor e o hash da senha é lento de propósito:
+        # tudo roda numa thread para não congelar as partidas
         user = await asyncio.to_thread(database.check_login, username, password)
         if not user:
             await conn.send({"type": "auth_error", "message": "Usuário ou senha incorretos"})
             return
-        token = database.create_session(user)
+        token = await asyncio.to_thread(database.create_session, user)
     elif kind == "register":
         error = await asyncio.to_thread(database.create_user, username, password)
         if error:
             await conn.send({"type": "auth_error", "message": error})
             return
-        user, token = username, database.create_session(username)
+        user, token = username, await asyncio.to_thread(database.create_session, username)
     else:
         await conn.send({"type": "need_login"})
         return
@@ -105,16 +132,16 @@ async def handleMessage(conn, data):
     if kind == "logout":
         await lobby.leave(conn)
         lobby.conns.discard(conn)
-        database.delete_session(conn.token)
+        await asyncio.to_thread(database.delete_session, conn.token)
         print(f"{conn.username} saiu da conta")
         conn.username = conn.token = None
         await conn.send({"type": "need_login"})
         return None
 
     if kind == "create_room":
+        # quem cria entra sem lado: brancas ou pretas são escolhidas na sala de espera
         room = lobby.createRoom(data.get("name"), conn.username)
-        role = data.get("role", "white")
-        return await lobby.join(conn, room.id, role)
+        return await lobby.join(conn, room.id, "spectator")
 
     if kind == "join":
         try:
@@ -122,6 +149,9 @@ async def handleMessage(conn, data):
         except (TypeError, ValueError):
             return "Sala inválida"
         return await lobby.join(conn, room_id, data.get("role"))
+
+    if kind == "sit":
+        return await lobby.sit(conn, str(data.get("role", "")))
 
     if kind == "leave":
         await lobby.leave(conn)
@@ -139,7 +169,7 @@ async def handleMessage(conn, data):
             return "Movimento inválido"
         if not all(0 <= x < 8 for x in start + end) or len(start) != 2 or len(end) != 2:
             return "Movimento inválido"
-        error = room.tryMove(conn, start, end)
+        error = room.tryMove(conn, start, end, str(data.get("promotion", "Q")))
         if error:
             if room.status == "timeout":  # o tempo acabou antes da jogada chegar
                 await room.broadcastState()
@@ -190,6 +220,7 @@ async def startBackground(app):
 async def stopBackground(app):
     app["cleanup"].cancel()
     app["clock"].cancel()
+    database.close_db()
 
 
 def createApp():

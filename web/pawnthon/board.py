@@ -17,6 +17,9 @@ FRAMES_PER_SQUARE = 7  # mesma velocidade do animateMove do pygame (a 60 quadros
 SELECTED = (0, 34, 77, 140)
 TARGET = (255, 32, 78, 140)
 LAST_MOVE = (255, 32, 78, 56)
+CHECK = (255, 0, 40, 170)
+PROMOTION_PIECES = ("Q", "R", "B", "N")
+CHECK_BANNER_SECONDS = 1.6
 
 
 class BoardView:
@@ -31,6 +34,7 @@ class BoardView:
         self.playerClicks = []
         self.animation = None
         self.lastMoveId = None
+        self.checkAt = 0  # quando o último xeque aconteceu (o aviso "XEQUE!" aparece por um tempo)
 
     # ---------- geometria ----------
 
@@ -51,6 +55,9 @@ class BoardView:
             self.sqSelected, self.playerClicks = None, []
             if not isNewGame and moveId is not None:
                 self.startAnimation(lastMove)
+                if state.get("inCheck"):
+                    # o aviso de xeque aparece quando a peça termina de andar
+                    self.checkAt = time.time() + self.animation["duration"]
         self.lastMoveId = moveId
 
     def startAnimation(self, move):
@@ -111,6 +118,22 @@ class BoardView:
         if game["lastMove"] and not self.animation:
             for r, c in (game["lastMove"]["start"], game["lastMove"]["end"]):
                 theme.alphaRect(surf, LAST_MOVE, self.squareRect(r, c))
+        king = self.kingInCheck(game)
+        if king and not self.animation:
+            # casa do rei ameaçado em vermelho, com um brilho por baixo da peça
+            rect = self.squareRect(*king)
+            theme.alphaRect(surf, CHECK, rect)
+            pygame.draw.rect(surf, theme.RED, rect, max(2, u(3)))
+
+    def kingInCheck(self, game):
+        if not game.get("inCheck"):
+            return None
+        king = ("w" if game["whiteToMove"] else "b") + "K"
+        for r in range(DIM):
+            for c in range(DIM):
+                if game["board"][r][c] == king:
+                    return r, c
+        return None
 
     def highlightSquares(self, surf, game):
         if not self.sqSelected:
@@ -170,6 +193,44 @@ class BoardView:
             self.drawText(surf, "stalemate")
         elif status == "timeout":
             self.drawText(surf, "O PRETO VENCEU POR TEMPO" if game["timeout"]["loser"] == "white" else "O BRANCO VENCEU POR TEMPO")
+        elif status == "playing" and game.get("inCheck") and not self.animation                 and time.time() - self.checkAt < CHECK_BANNER_SECONDS:
+            self.drawText(surf, "XEQUE!")
+
+    # ---------- promoção do peão ----------
+
+    def promotionRects(self):
+        ''' as 4 opções (rainha, torre, bispo, cavalo) lado a lado no meio do tabuleiro '''
+        size = int(self.sq * 1.15)
+        gap = u(10)
+        total = size * 4 + gap * 3
+        x = self.rect.centerx - total // 2
+        y = self.rect.centery - size // 2 + u(14)
+        return [pygame.Rect(x + i * (size + gap), y, size, size) for i in range(4)]
+
+    def drawPromotion(self, surf, colour, mouse):
+        theme.alphaRect(surf, (0, 0, 0, 150), self.rect)
+        rects = self.promotionRects()
+        panel = rects[0].union(rects[-1]).inflate(u(36), u(36))
+        panel.y -= u(30)
+        panel.h += u(30)
+        theme.rrect(surf, theme.NAVY, panel, 12)
+        theme.rrect(surf, theme.RED, panel, 12, max(1, u(2)))
+        theme.draw(surf, "Promover peão para:", (panel.centerx, panel.y + u(24)), 16, theme.WHITE, "bold", "center")
+        for rect, p in zip(rects, PROMOTION_PIECES):
+            hover = rect.collidepoint(mouse)
+            theme.rrect(surf, theme.CRIMSON if hover else theme.LIGHT_SQ, rect, 8)
+            if hover:
+                theme.rrect(surf, theme.RED, rect, 8, max(2, u(3)))
+            img = theme.image(f"images/{colour}{p}.png", (int(rect.w * 0.9), int(rect.h * 0.9)))
+            surf.blit(img, img.get_rect(center=rect.center))
+        return panel
+
+    def promotionClick(self, pos):
+        ''' devolve a peça clicada ("Q", "R", "B" ou "N") ou None '''
+        for rect, p in zip(self.promotionRects(), PROMOTION_PIECES):
+            if rect.collidepoint(pos):
+                return p
+        return None
 
     # ---------- cliques (mesma lógica do loop de eventos do ChessMain.py) ----------
 

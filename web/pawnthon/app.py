@@ -15,7 +15,7 @@ from ui import UI
 
 LINKEDIN = "https://www.linkedin.com/in/kassiobcunha/"
 PORTFOLIO = "https://portifolio-web-kassio.vecel.app/"
-TECH = "Feito 100% em Python · pygame-ce + pygbag (WebAssembly) · aiohttp · WebSocket · SQLite"
+TECH = "Xadrez desenvolvido somente com Python"
 
 ROLE_LABEL = {"white": "brancas", "black": "pretas", "spectator": "espectador"}
 STATUS_LABEL = {
@@ -29,6 +29,18 @@ ENDED = ("checkmate", "stalemate", "timeout")
 
 TOKEN_KEY = "pawnthon_token"
 ROOM_KEY = "pawnthon_room"
+RELOAD_KEY = "pawnthon_reload"
+
+
+def readBuildId():
+    try:
+        with open(theme.BASE + "/build_id.txt", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+BUILD_ID = readBuildId()
 
 
 def formatTime(seconds):
@@ -57,13 +69,13 @@ class App:
 
         self.rooms = []
         self.lobbyScroll = 0
-        self.createRole = "white"
 
         self.game = None
         self.leftRoom = None  # sala que acabamos de deixar: ignora atualizações dela que ainda estavam a caminho
         self.clockAt = 0
         self.waitingServer = False
         self.confirmKick = None
+        self.promotion = None  # (início, fim) do peão esperando o jogador escolher a peça nova
 
         self.toastText = None
         self.toastUntil = 0
@@ -88,7 +100,14 @@ class App:
 
     def handle(self, msg):
         kind = msg.get("type")
-        if kind == "need_login":
+        if kind == "build":
+            # o servidor foi atualizado depois que esta aba abriu: recarrega para baixar o cliente novo
+            # (só uma tentativa por versão, para nunca ficar recarregando em loop)
+            server = msg.get("id")
+            if browser.BROWSER and server and BUILD_ID and server != BUILD_ID                     and browser.storageGet(RELOAD_KEY, session=True) != server:
+                browser.storageSet(RELOAD_KEY, server, session=True)
+                browser.reload()
+        elif kind == "need_login":
             token = browser.storageGet(TOKEN_KEY)
             if token and not self.tokenSent:
                 self.tokenSent = True  # tenta voltar com a sessão salva só uma vez por conexão
@@ -136,6 +155,11 @@ class App:
         isNewGame = self.game is None or self.game["room"]["id"] != msg["room"]["id"]
         if isNewGame:
             self.board.reset()
+        else:
+            lastId = (self.game["lastMove"] or {}).get("id")
+            moveId = (msg["lastMove"] or {}).get("id")
+            if msg.get("inCheck") and moveId is not None and moveId != lastId:
+                browser.playCheckSound()
         self.board.onState(msg, isNewGame)
         self.game = msg
         self.clockAt = time.time()
@@ -147,6 +171,7 @@ class App:
         if self.game:
             self.leftRoom = self.game["room"]["id"]
         self.game = None
+        self.promotion = None
         self.board.reset()
         self.view = "lobby"
 
@@ -301,7 +326,7 @@ class App:
         brandW = 0 if self.portrait else u(300)
         cardW = min(self.W - u(32), formW + pad * 2 + (brandW + pad if brandW else 0))
         formW = cardW - pad * 2 - (brandW + pad if brandW else 0)
-        brandH = 0 if brandW else u(196)
+        brandH = 0 if brandW else u(172)
         formH = u(300) + (u(26) if self.authError else 0) + brandH
         cardH = formH + pad * 2
         card = pygame.Rect(0, 0, cardW, cardH)
@@ -310,14 +335,11 @@ class App:
 
         if brandW:
             brand = pygame.Rect(card.x + pad, card.y + pad, brandW, cardH - pad * 2)
+            # logo e nome centralizados na altura da coluna
             logo = u(150)
-            s.blit(theme.image("img/logo_mark.png", (logo, logo)), (brand.centerx - logo // 2, brand.y + u(18)))
-            y = brand.y + u(18) + logo + u(10)
-            self.drawBrandName(brand.centerx, y, 28)
-            y += u(44)
-            for line in theme.wrap("Xadrez online em tempo real, feito 100% em Python e rodando no navegador com WebAssembly.", 14, "regular", brandW - u(10)):
-                theme.draw(s, line, (brand.centerx, y), 14, theme.MUTED, anchor="midtop")
-                y += u(22)
+            top = brand.centery - (logo + u(10) + u(40)) // 2
+            s.blit(theme.image("img/logo_mark.png", (logo, logo)), (brand.centerx - logo // 2, top))
+            self.drawBrandName(brand.centerx, top + logo + u(10), 28)
             pygame.draw.line(s, theme.WINE, (brand.right + pad // 2, card.y + pad), (brand.right + pad // 2, card.bottom - pad), max(1, u(1)))
             x = brand.right + pad
             y = card.y + pad
@@ -326,8 +348,7 @@ class App:
             s.blit(theme.image("img/logo_mark.png", (logo, logo)), (card.centerx - logo // 2, card.y + pad))
             y = card.y + pad + logo + u(4)
             self.drawBrandName(card.centerx, y, 24)
-            theme.draw(s, "Xadrez online em tempo real", (card.centerx, y + u(38)), 14, theme.MUTED, anchor="midtop")
-            y += u(72)
+            y += u(48)
             pygame.draw.line(s, theme.WINE, (card.x + pad, y), (card.right - pad, y), max(1, u(1)))
             y += u(16)
             x = card.x + pad
@@ -382,30 +403,19 @@ class App:
 
         # criar sala
         pad = u(20)
-        cardH = u(190) if self.portrait else u(120)
+        cardH = u(120)
         card = pygame.Rect(x, y, width, cardH)
         theme.card(s, card)
         theme.draw(s, "Criar sala", (card.x + pad, card.y + pad), 18, theme.WHITE, "bold")
         rowY = card.y + pad + u(40)
         inner = card.w - pad * 2
-        toggleW, createW, gap = u(110), u(110), u(10)
-        if self.portrait:
-            name = ui.input("roomName", pygame.Rect(card.x + pad, rowY, inner, u(42)), "Nome da sala", maxlength=30)
-            rowY += u(54)
-            toggleW = (inner - gap * 2) // 3
-            tx = card.x + pad
-            createRect = pygame.Rect(tx + 2 * (toggleW + gap), rowY, inner - 2 * (toggleW + gap), u(42))
-        else:
-            inputW = inner - toggleW * 2 - createW - gap * 3
-            name = ui.input("roomName", pygame.Rect(card.x + pad, rowY, inputW, u(42)), "Nome da sala", maxlength=30)
-            tx = card.x + pad + inputW + gap
-            createRect = pygame.Rect(tx + 2 * (toggleW + gap), rowY, createW, u(42))
-        for i, (role, label) in enumerate((("white", "Brancas"), ("black", "Pretas"))):
-            r = pygame.Rect(tx + i * (toggleW + gap), rowY, toggleW, u(42))
-            if ui.button(r, label, "primary" if self.createRole == role else "secondary"):
-                self.createRole = role
+        # o lado (brancas ou pretas) é escolhido depois, dentro da sala de espera
+        createW, gap = u(110), u(10)
+        inputW = inner - createW - gap
+        name = ui.input("roomName", pygame.Rect(card.x + pad, rowY, inputW, u(42)), "Nome da sala", maxlength=30)
+        createRect = pygame.Rect(card.x + pad + inputW + gap, rowY, createW, u(42))
         if ui.button(createRect, "Criar") or ui.submitted == "roomName":
-            self.send({"type": "create_room", "name": name, "role": self.createRole})
+            self.send({"type": "create_room", "name": name})
             ui.setValue("roomName", "")
 
         # lista de salas
@@ -537,13 +547,15 @@ class App:
             y += u(42)
         y += u(16)
 
-        if not room["white"] or not room["black"]:
+        if g["role"] == "spectator" and (not room["white"] or not room["black"]):
+            status = 'Clique em "Sentar aqui" para escolher o seu lado'
+        elif not room["white"] or not room["black"]:
             status = "Esperando o outro jogador entrar..."
         elif self.isPlayer() and not room["ready"][g["role"]]:
             status = 'Marque "Estou pronto" para começar a partida'
         else:
             status = "A partida começa quando os dois jogadores estiverem prontos"
-        if g["role"] == "spectator":
+        if g["role"] == "spectator" and room["white"] and room["black"]:
             status += " (você está assistindo)"
         theme.draw(s, theme.ellipsize(status, 14, "semibold", inner), (x, y), 14, theme.WHITE, "semibold")
         y += u(30) + u(10)
@@ -592,6 +604,14 @@ class App:
             self.badge((rect.x + pad, y), label, theme.BLACK, theme.MUTED)
         if name and name != self.me and self.isOwner():
             self.kickButton(pygame.Rect(rect.right - pad - u(100), y - u(14), u(100), u(28)), name)
+        # escolha do lado: sentar num lugar vago (ou trocar de lado) e levantar do seu
+        seat = pygame.Rect(rect.right - pad - u(120), y - u(17), u(120), u(34))
+        if not name:
+            if self.ui.button(seat, "Sentar aqui", size=13):
+                self.send({"type": "sit", "role": color})
+        elif name == self.me and g["role"] == color:
+            if self.ui.button(seat, "Levantar", "secondary", size=13):
+                self.send({"type": "sit", "role": "spectator"})
 
     def badge(self, midleft, label, bg, fg):
         img = theme.text(label, 12, fg, "bold")
@@ -627,13 +647,33 @@ class App:
         ui.rects["board"] = self.board.rect
         self.board.draw(s, g, self.isPlayer())
 
+        if self.promotion and not self.myTurn():
+            self.promotion = None
+        if self.promotion:
+            # escolha da peça da promoção: clicar fora cancela o lance
+            colour = "w" if g["role"] == "white" else "b"
+            self.board.drawPromotion(s, colour, ui.mouse)
+            choice = self.board.promotionClick(ui.mouse)
+            if choice:
+                ui.hand = True
+            if ui.clicked:
+                choice = self.board.promotionClick(ui.clicked)
+                if choice:
+                    start, end = self.promotion
+                    self.send({"type": "move", "start": start, "end": end, "promotion": choice})
+                    self.waitingServer = True
+                self.promotion = None
         # clique no tabuleiro
-        if ui.clicked and self.board.rect.collidepoint(ui.clicked) and self.myTurn() and not self.waitingServer:
+        elif ui.clicked and self.board.rect.collidepoint(ui.clicked) and self.myTurn() and not self.waitingServer:
             move = self.board.click(ui.clicked, g)
             if move:
-                self.send({"type": "move", "start": move[0], "end": move[1]})
-                self.waitingServer = True
-        if self.myTurn() and ui.hover(self.board.rect):
+                (sr, sc), (er, ec) = move
+                if g["board"][sr][sc][1] == "P" and er in (0, 7):
+                    self.promotion = move  # o lance só vai para o servidor depois da escolha
+                else:
+                    self.send({"type": "move", "start": move[0], "end": move[1]})
+                    self.waitingServer = True
+        if self.myTurn() and not self.promotion and ui.hover(self.board.rect):
             ui.hand = True
 
         self.drawPanel(panel)
@@ -727,9 +767,11 @@ class App:
             why = "ficaram 1 minuto sem jogar" if g["timeout"]["reason"] == "move" else "esgotaram o tempo total"
             text = f"{winner} venceram: as {ROLE_LABEL[loser]} {why}"
         elif self.myTurn():
-            text = "Sua vez!"
+            text = "Xeque! Proteja o seu rei" if g.get("inCheck") else "Sua vez!"
         else:
             text = "Vez das brancas" if g["whiteToMove"] else "Vez das pretas"
+            if g.get("inCheck"):
+                text = "Xeque! " + text
         if g["role"] == "spectator":
             text += " (você está assistindo)"
         return text

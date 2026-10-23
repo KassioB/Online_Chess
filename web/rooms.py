@@ -48,6 +48,7 @@ class Room:
     def newGame(self):
         self.gs = GameState()
         self.validMoves = self.gs.getValidMoves()
+        self.inCheck = False  # o jogador da vez está em xeque
         self.lastMove = None
         self.clock = {"white": TOTAL_TIME, "black": TOTAL_TIME}
         self.turnStart = None  # quando a jogada atual começou; None com o relógio parado
@@ -147,6 +148,7 @@ class Room:
             "spectatorNames": self.spectators(),
             "clock": self.clockState(),
             "timeout": self.timeout,
+            "inCheck": self.inCheck,
         }
 
     async def broadcastState(self):
@@ -168,8 +170,9 @@ class Room:
             self.started = True
         return None
 
-    def tryMove(self, conn, start, end):
+    def tryMove(self, conn, start, end, promotion="Q"):
         # retorna uma mensagem de erro ou None se a jogada foi feita
+        # promotion é a peça escolhida quando um peão chega na última fileira
         if self.checkTimeout() or self.status != "playing":
             return "A partida não está em andamento"
         color = self.toMove
@@ -179,10 +182,15 @@ class Room:
         for valid in self.validMoves:
             if valid == move:
                 # usa o movimento gerado pelo engine, que já sabe se é en passant ou roque
+                if valid.isPawnPromotion:
+                    if promotion not in Move.PROMOTION_PIECES:
+                        return "Escolha rainha, torre, bispo ou cavalo para a promoção"
+                    valid.promotionChoice = promotion
                 self.clock[color] -= self.elapsed()
                 self.gs.makeMove(valid)
                 self.turnStart = time.time()
                 self.validMoves = self.gs.getValidMoves()
+                self.inCheck = self.gs.inCheck()
                 self.lastMove = {
                     "start": [valid.startRow, valid.startCol],
                     "end": [valid.endRow, valid.endCol],
@@ -234,6 +242,29 @@ class Lobby:
             room.seats[role] = conn.username
         conn.room, conn.role = room, role
         room.conns.add(conn)
+        await room.broadcastState()
+        await self.broadcastRooms()
+        return None
+
+    async def sit(self, conn, color):
+        # na sala de espera: escolher um lado, trocar de lado ou levantar (color = "spectator")
+        room = conn.room
+        if room is None:
+            return "Você não está em uma sala"
+        if room.started:
+            return "A partida já começou"
+        if color not in ROLES:
+            return "Escolha brancas, pretas ou espectador"
+        if color == conn.role:
+            return None
+        if color != "spectator" and room.seats[color] not in (None, conn.username):
+            return "Esse lado já está ocupado"
+        if conn.role in room.seats:
+            room.freeSeat(conn.role)
+        if color != "spectator":
+            room.seats[color] = conn.username
+            room.ready[color] = False
+        conn.role = color
         await room.broadcastState()
         await self.broadcastRooms()
         return None

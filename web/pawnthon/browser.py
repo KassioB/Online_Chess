@@ -70,6 +70,27 @@ window.PawnDom = {
     takeEnter(id) { const el = this.els[id]; if (el && el.dataset.enter) { delete el.dataset.enter; return 1; } return 0; },
     cursor(c) { const el = document.getElementById("canvas"); if (el && el.style.cursor !== c) el.style.cursor = c; },
     testMode() { return location.search.indexOf("test") >= 0 ? 1 : 0; },
+    beep(notes) {
+        // som gerado na hora pelo WebAudio (sem arquivo de áudio para baixar)
+        try {
+            const Ctx = window.AudioContext || window.webkitAudioContext;
+            if (!Ctx) return;
+            this.audio = this.audio || new Ctx();
+            const ctx = this.audio;
+            if (ctx.state === "suspended") ctx.resume();
+            let t = ctx.currentTime;
+            for (const [freq, dur] of JSON.parse(notes)) {
+                const osc = ctx.createOscillator(), gain = ctx.createGain();
+                osc.type = "triangle"; osc.frequency.value = freq;
+                gain.gain.setValueAtTime(0.0001, t);
+                gain.gain.exponentialRampToValueAtTime(0.35, t + 0.015);
+                gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+                osc.connect(gain).connect(ctx.destination);
+                osc.start(t); osc.stop(t + dur);
+                t += dur * 0.85;
+            }
+        } catch (e) {}
+    },
     publish(json) { window.PawnTest = JSON.parse(json); },
 };
 """)
@@ -220,6 +241,45 @@ class Overlay:
 
     def takeEnter(self, id):
         return BROWSER and int(dom.takeEnter(id)) == 1
+
+
+# ---------- som ----------
+
+CHECK_NOTES = [(880, 0.12), (660, 0.22)]  # duas notas descendo: o alerta de xeque
+_desktopSound = None
+
+
+def playCheckSound():
+    if BROWSER:
+        dom.beep(json.dumps(CHECK_NOTES))
+        return
+    # no desktop o mesmo som é montado amostra por amostra e tocado pelo pygame.mixer
+    global _desktopSound
+    import array
+    import math
+
+    import pygame
+    try:
+        if not pygame.mixer.get_init():
+            pygame.mixer.init(44100, -16, 1)
+        if _desktopSound is None:
+            rate, channels = pygame.mixer.get_init()[0], pygame.mixer.get_init()[2]
+            samples = array.array("h")
+            for freq, dur in CHECK_NOTES:
+                n = int(rate * dur)
+                for i in range(n):
+                    fade = min(1.0, i / (rate * 0.015)) * (1 - i / n)
+                    value = int(9000 * fade * math.sin(2 * math.pi * freq * i / rate))
+                    samples.extend([value] * channels)
+            _desktopSound = pygame.mixer.Sound(buffer=samples.tobytes())
+        _desktopSound.play()
+    except pygame.error:
+        pass  # sem placa de som (testes)
+
+
+def reload():
+    if BROWSER:
+        window.location.reload()
 
 
 def openUrl(url):

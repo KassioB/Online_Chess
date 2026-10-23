@@ -49,9 +49,9 @@ class GameState():
         elif move.pieceMoved == 'bK':
             self.blackKingLocation = (move.endRow, move.endCol)
 
-        # promoção do peao
+        # promoção do peao: vira a peça escolhida pelo jogador (rainha se não escolheu)
         if move.isPawnPromotion:
-            self.board[move.endRow][move.endCol] = move.pieceMoved[0] + 'Q'
+            self.board[move.endRow][move.endCol] = move.pieceMoved[0] + move.promotionChoice
 
         # enpassant
         if move.isEnpassantMove:
@@ -372,6 +372,7 @@ class castleRights():
 
 
 class Move():
+    PROMOTION_PIECES = ("Q", "R", "B", "N")  # rainha, torre, bispo e cavalo
     # Numerando as linhas e colunas de 1 a 8
     ranksToRows = {"1": 7, "2": 6, "3": 5, "4": 4,
                    "5": 3, "6": 2, "7": 1, "8": 0}
@@ -381,7 +382,7 @@ class Move():
                    "e": 4, "f": 5, "g": 6, "h": 7}
     colsToFiles = {v: k for k, v in filesToCols.items()}
 
-    def __init__(self, startSq, endSq, board, isEnpassantMove=False, isCastleMove=False):
+    def __init__(self, startSq, endSq, board, isEnpassantMove=False, isCastleMove=False, promotionChoice="Q"):
         # começo e fim da localizaçao/quadrado
         self.startRow = startSq[0]
         self.startCol = startSq[1]
@@ -394,6 +395,7 @@ class Move():
         # booleano para ver se o peão preto ou branco foi movido para a linha final
         self.isPawnPromotion = ((self.pieceMoved == 'wP' and self.endRow == 0) or (
             self.pieceMoved == 'bP' and self.endRow == 7))
+        self.promotionChoice = promotionChoice
 
         self.isEnpassantMove = isEnpassantMove
 
@@ -413,7 +415,10 @@ class Move():
 
     # Essa função retorna a posição da casa e da coluna
     def getChessNot(self):
-        return self.getRankFile(self.startRow, self.startCol) + self.getRankFile(self.endRow, self.endCol)
+        notation = self.getRankFile(self.startRow, self.startCol) + self.getRankFile(self.endRow, self.endCol)
+        if self.isPawnPromotion:
+            notation += "=" + self.promotionChoice
+        return notation
 
     def getRankFile(self, r, c):
         return self.colsToFiles[c] + self.rowsToRanks[r]
